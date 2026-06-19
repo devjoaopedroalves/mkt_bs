@@ -383,9 +383,16 @@
         </div>
     </div>
 
+    <!-- Supabase JS Library -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
         const ADMIN_PASSWORD = 'bs2024admin';
         const STORAGE_KEY = 'bs_festa_participants';
+        const SUPABASE_URL = 'https://kautazpareiiyawdziaj.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_0mAiSv9_9IzA8eADJsn1XQ_TiZ4vjiM';
+        const supabaseClient = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+        
+        let allParticipants = [];
 
         function adminLogin() {
             const password = document.getElementById('admin-password').value;
@@ -407,31 +414,52 @@
             document.getElementById('admin-password').value = '';
         }
 
-        function getParticipants() {
+        async function fetchParticipants() {
+            if (supabaseClient && SUPABASE_URL !== 'COLE_AQUI_A_URL_DO_SUPABASE') {
+                const { data, error } = await supabaseClient.from('participants').select('*').order('created_at', { ascending: false });
+                if (error) {
+                    console.error('Supabase error:', error);
+                    return getParticipantsFallback();
+                }
+                return data.map(p => ({
+                    nome: p.nome,
+                    instagram: p.instagram,
+                    whatsapp: p.whatsapp,
+                    whatsappFormatted: p.whatsapp,
+                    prize: p.prize,
+                    prizeIcon: p.prize_icon,
+                    code: p.code,
+                    date: p.date,
+                    time: p.time
+                }));
+            }
+            return getParticipantsFallback();
+        }
+
+        function getParticipantsFallback() {
             try {
-                return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+                return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]').reverse();
             } catch { return []; }
         }
 
-        function loadDashboard() {
-            const participants = getParticipants();
+        async function loadDashboard() {
+            allParticipants = await fetchParticipants();
             const today = new Date().toLocaleDateString('pt-BR');
 
-            document.getElementById('stat-total').textContent = participants.length;
-            document.getElementById('stat-calcinha').textContent = participants.filter(p => p.prize === 'Calcinha Grátis').length;
-            document.getElementById('stat-duas').textContent = participants.filter(p => p.prize === 'Duas Calcinhas Grátis').length;
-            document.getElementById('stat-50off').textContent = participants.filter(p => p.prize === '50% OFF').length;
-            document.getElementById('stat-today').textContent = participants.filter(p => p.date === today).length;
+            document.getElementById('stat-total').textContent = allParticipants.length;
+            document.getElementById('stat-calcinha').textContent = allParticipants.filter(p => p.prize === 'Calcinha Grátis').length;
+            document.getElementById('stat-duas').textContent = allParticipants.filter(p => p.prize === 'Duas Calcinhas Grátis').length;
+            document.getElementById('stat-50off').textContent = allParticipants.filter(p => p.prize === '50% OFF').length;
+            document.getElementById('stat-today').textContent = allParticipants.filter(p => p.date === today).length;
 
             renderTable();
         }
 
         function renderTable() {
-            const participants = getParticipants();
             const search = (document.getElementById('search-input').value || '').toLowerCase();
             const tbody = document.getElementById('table-body');
 
-            const filtered = participants.filter(p => {
+            const filtered = allParticipants.filter(p => {
                 if (!search) return true;
                 return (
                     p.nome.toLowerCase().includes(search) ||
@@ -466,7 +494,7 @@
                 '50% OFF': 'rgba(255,215,0,0.2); color: #FFD700',
             };
 
-            tbody.innerHTML = filtered.reverse().map((p, i) => `
+            tbody.innerHTML = filtered.map((p, i) => `
                 <tr>
                     <td>${filtered.length - i}</td>
                     <td><strong>${p.nome}</strong></td>
@@ -481,8 +509,7 @@
         }
 
         function exportExcel() {
-            const participants = getParticipants();
-            if (participants.length === 0) {
+            if (allParticipants.length === 0) {
                 alert('Nenhum dado para exportar!');
                 return;
             }
@@ -491,7 +518,7 @@
             let csv = '\uFEFF';
             csv += 'Nome,Instagram,WhatsApp,Prêmio,Código,Data,Hora\n';
 
-            participants.forEach(p => {
+            allParticipants.forEach(p => {
                 csv += `"${p.nome}","${p.instagram}","${p.whatsappFormatted || p.whatsapp}","${p.prizeIcon || ''} ${p.prize}","${p.code || ''}","${p.date}","${p.time}"\n`;
             });
 
@@ -504,12 +531,16 @@
             URL.revokeObjectURL(url);
         }
 
-        function clearData() {
+        async function clearData() {
             if (confirm('⚠️ ATENÇÃO!\n\nIsso vai apagar TODOS os dados de participantes.\n\nTem certeza?')) {
                 if (confirm('🚨 Última chance!\n\nDeseja realmente apagar todos os dados?\nEssa ação não pode ser desfeita.')) {
+                    if (supabaseClient && SUPABASE_URL !== 'COLE_AQUI_A_URL_DO_SUPABASE') {
+                        const { error } = await supabaseClient.from('participants').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+                        if (error) alert('Erro ao limpar Supabase: ' + error.message);
+                    }
                     localStorage.removeItem(STORAGE_KEY);
                     localStorage.removeItem('bs_festa_used_numbers');
-                    loadDashboard();
+                    await loadDashboard();
                     alert('✅ Dados apagados com sucesso!');
                 }
             }

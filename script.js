@@ -14,6 +14,9 @@ const CONFIG = {
     // Google Sheets Web App URL (Apps Script)
     // Deploy your Google Apps Script and paste the URL here
     googleSheetsUrl: 'https://script.google.com/macros/s/AKfycbwZFWSC3X1CSKxbio2MNryI_eCgRILL3NcQ9jiaH2bG28EZxMu-YcJRoNhUyo6KEZMu/exec',
+    // Supabase
+    supabaseUrl: 'https://kautazpareiiyawdziaj.supabase.co',
+    supabaseKey: 'sb_publishable_0mAiSv9_9IzA8eADJsn1XQ_TiZ4vjiM',
     // Admin password
     adminPassword: 'bs2024admin',
     // Local storage keys
@@ -32,6 +35,8 @@ const PRIZES = [
     { name: 'Duas Calcinhas Grátis', icon: '🩲🩲', color: '#ff6b00', weight: 2 },
     { name: '50% OFF', icon: '🏆', color: '#FFD700', weight: 1 },
 ];
+
+const supabaseClient = window.supabase ? window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey) : null;
 
 // ========================
 // STATE
@@ -478,10 +483,50 @@ function handleFormSubmit(event) {
         return false;
     }
     
+    // Disable button while checking
+    const btnSubmit = document.querySelector('#registration-form button[type="submit"]');
+    const originalText = btnSubmit.innerHTML;
+    btnSubmit.disabled = true;
+    btnSubmit.innerHTML = '<span class="btn-text">⏳ VERIFICANDO...</span><span class="btn-shine"></span>';
+
+    // Verify if WhatsApp already played
+    if (supabaseClient && CONFIG.supabaseUrl !== 'COLE_AQUI_A_URL_DO_SUPABASE') {
+        supabaseClient.from('participants').select('whatsapp').eq('whatsapp', whatsappClean).limit(1).then(({data, error}) => {
+            if (error) {
+                console.error("Erro no Supabase", error);
+                proceedWithFormFallback(nome, instagram, whatsappClean, whatsapp, originalText, btnSubmit);
+            } else if (data && data.length > 0) {
+                showFormError('Esse WhatsApp já participou! Cada número só pode jogar uma vez. 🚫');
+                btnSubmit.disabled = false;
+                btnSubmit.innerHTML = originalText;
+            } else {
+                proceedWithForm(nome, instagram, whatsappClean, whatsapp, originalText, btnSubmit);
+            }
+        });
+    } else {
+        proceedWithFormFallback(nome, instagram, whatsappClean, whatsapp, originalText, btnSubmit);
+    }
+    
+    return false;
+}
+
+function proceedWithFormFallback(nome, instagram, whatsappClean, whatsapp, originalText, btnSubmit) {
     const usedNumbers = getUsedNumbers();
     if (usedNumbers.includes(whatsappClean)) {
         showFormError('Esse WhatsApp já participou! Cada número só pode jogar uma vez. 🚫');
-        return false;
+        if (btnSubmit) {
+            btnSubmit.disabled = false;
+            btnSubmit.innerHTML = originalText;
+        }
+        return;
+    }
+    proceedWithForm(nome, instagram, whatsappClean, whatsapp, originalText, btnSubmit);
+}
+
+function proceedWithForm(nome, instagram, whatsappClean, whatsapp, originalText, btnSubmit) {
+    if (btnSubmit) {
+        btnSubmit.disabled = false;
+        btnSubmit.innerHTML = originalText;
     }
     
     let insta = instagram;
@@ -497,7 +542,6 @@ function handleFormSubmit(event) {
     document.getElementById('player-display-name').textContent = `🎉 ${nome}, é sua vez!`;
     
     showRouletteScreen();
-    return false;
 }
 
 function showFormError(message) {
@@ -868,8 +912,26 @@ function onSpinComplete(prize, prizeIndex) {
         code: generateCode(),
     };
     
+    // Save to LocalStorage (fallback)
     saveParticipant(participant);
     saveUsedNumber(currentPlayer.whatsapp);
+    
+    // Save to Supabase
+    if (supabaseClient && CONFIG.supabaseUrl !== 'COLE_AQUI_A_URL_DO_SUPABASE') {
+        supabaseClient.from('participants').insert([{
+            nome: participant.nome,
+            instagram: participant.instagram,
+            whatsapp: participant.whatsapp,
+            prize: participant.prize,
+            prize_icon: participant.prizeIcon,
+            code: participant.code,
+            date: participant.date,
+            time: participant.time
+        }]).then(({error}) => {
+            if (error) console.error('Erro ao salvar no Supabase:', error);
+            else console.log('✅ Salvo no Supabase com sucesso');
+        });
+    }
     
     // 📊 Send to Google Sheets
     sendToGoogleSheets(participant);
